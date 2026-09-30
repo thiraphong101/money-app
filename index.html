@@ -31,6 +31,7 @@
         button:disabled { opacity: 0.6; cursor: not-allowed; }
         .btn-outline { background: white; color: var(--primary); border: 2px solid var(--primary); margin-top: 10px; }
         .del-btn { background: #fee2e2; color: var(--danger); border: none; padding: 8px; border-radius: 6px; font-size: 12px; width: auto; margin: 0; cursor: pointer; }
+        .edit-btn { background: var(--warning); color: white; border: none; padding: 8px; border-radius: 6px; font-size: 12px; width: auto; margin: 0; cursor: pointer; }
         
         .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .progress-bar-bg { width: 100%; background: #e2e8f0; height: 15px; border-radius: 8px; overflow: hidden; margin-top: 8px; }
@@ -161,9 +162,16 @@
                 <input type="text" id="actName" placeholder="เช่น ทริปญี่ปุ่น, ซื้อโทรศัพท์">
                 <label>เป้าหมายเงินออม (บาท):</label>
                 <input type="number" id="actGoal" inputmode="decimal">
+                
                 <label>บัญชีที่ใช้เก็บเงิน:</label>
-                <input type="text" id="actAccount" placeholder="เช่น กสิกร 123-4-56789-0">
-                <button onclick="window.addActivity()" style="background: var(--success);">+ เพิ่มกิจกรรม</button>
+                <!-- ใช้ Datalist เพื่อให้เลือกได้และพิมพ์เองได้ -->
+                <input type="text" id="actAccount" placeholder="เลือกบัญชีหรือพิมพ์เอง..." list="accountOptions">
+                <datalist id="accountOptions">
+                    <option value="กสิกร 2008799760">
+                    <option value="กรุงศรี 8029387683">
+                </datalist>
+
+                <button id="btnAddActivity" onclick="window.addActivity()" style="background: var(--success);">+ เพิ่มกิจกรรม</button>
             </div>
 
             <div class="card">
@@ -224,6 +232,9 @@
         let calendar = null;
         let unsubActivities = null;
         let unsubSavings = null;
+        
+        // ตัวแปรสำหรับเช็คว่ากำลังแก้ไขกิจกรรมไหนอยู่
+        window.currentEditActId = null;
 
         // UI Functions
         window.switchTab = (tabId) => {
@@ -318,7 +329,7 @@
             });
         }
 
-        // Settings (Add Activity)
+        // Settings (Add / Edit Activity)
         window.addActivity = async () => {
             const name = document.getElementById('actName').value;
             const goal = parseFloat(document.getElementById('actGoal').value);
@@ -327,10 +338,46 @@
             if(!name || !goal) return alert("กรุณากรอกชื่อและเป้าหมายเงินออม");
 
             try {
-                await addDoc(collection(db, "users", window.currentUser.uid, "activities"), { name, goal, account, timestamp: Date.now() });
-                document.getElementById('actName').value = ''; document.getElementById('actGoal').value = ''; document.getElementById('actAccount').value = '';
-                alert("✅ เพิ่มกิจกรรมสำเร็จ");
+                if (window.currentEditActId) {
+                    // โหมดแก้ไข
+                    await setDoc(doc(db, "users", window.currentUser.uid, "activities", window.currentEditActId), { 
+                        name, goal, account, timestamp: Date.now() 
+                    }, { merge: true });
+                    window.currentEditActId = null;
+                    const btn = document.getElementById('btnAddActivity');
+                    btn.innerText = '+ เพิ่มกิจกรรม';
+                    btn.style.background = 'var(--success)';
+                    alert("✅ แก้ไขกิจกรรมสำเร็จ");
+                } else {
+                    // โหมดเพิ่มใหม่
+                    await addDoc(collection(db, "users", window.currentUser.uid, "activities"), { 
+                        name, goal, account, timestamp: Date.now() 
+                    });
+                    alert("✅ เพิ่มกิจกรรมสำเร็จ");
+                }
+                document.getElementById('actName').value = ''; 
+                document.getElementById('actGoal').value = ''; 
+                document.getElementById('actAccount').value = '';
             } catch (e) { alert("Error: " + e.message); }
+        }
+
+        window.editActivity = (id) => {
+            const act = activities.find(a => a.id === id);
+            if(!act) return;
+            
+            document.getElementById('actName').value = act.name;
+            document.getElementById('actGoal').value = act.goal;
+            document.getElementById('actAccount').value = act.account || '';
+            
+            window.currentEditActId = id;
+            
+            // เปลี่ยนปุ่มเป็นโหมดแก้ไข
+            const btn = document.getElementById('btnAddActivity');
+            btn.innerText = '💾 บันทึกการแก้ไข';
+            btn.style.background = 'var(--warning)';
+            
+            // เลื่อนจอขึ้นไปด้านบนเพื่อให้เห็นฟอร์ม
+            window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
         function renderActivityList() {
@@ -345,7 +392,10 @@
                             <div style="font-weight:bold; color:${color};">${act.name}</div>
                             <div style="font-size:12px; color:#64748b;">เป้าหมาย: ${act.goal.toLocaleString()} ฿ | บัญชี: ${act.account||'-'}</div>
                         </div>
-                        <button class="del-btn" onclick="window.deleteActivity('${act.id}')">ลบ</button>
+                        <div style="display:flex; gap: 6px;">
+                            <button class="edit-btn" onclick="window.editActivity('${act.id}')">แก้ไข</button>
+                            <button class="del-btn" onclick="window.deleteActivity('${act.id}')">ลบ</button>
+                        </div>
                     </div>`;
             });
         }
