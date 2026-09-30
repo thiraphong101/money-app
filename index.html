@@ -5,10 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Savings Tracker (Pro Theme)</title>
     
-    <!-- FontAwesome & FullCalendar -->
+    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
 
     <style>
         :root { --primary: #2563eb; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; --bg: #f1f5f9; --card: #ffffff; --text: #1e293b; --border: #cbd5e1; }
@@ -46,18 +44,23 @@
         .img-modal img { max-width: 100%; max-height: 80%; border-radius: 8px; object-fit: contain; }
         .img-modal-close { color: white; font-size: 35px; font-weight: bold; position: absolute; top: 15px; right: 25px; cursor: pointer; z-index: 1001; }
         .modal-details { color: white; font-size: 16px; margin-top: 15px; text-align: center; }
-
-        .fc-event { cursor: pointer; }
-        .fc-toolbar-title { font-size: 1.2em !important; }
+        
+        /* --- NEW STYLES FOR HISTORY LOG --- */
+        .history-item { background: white; border: 1px solid var(--border); padding: 12px; border-radius: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .history-img { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: #e2e8f0; cursor: pointer; flex-shrink: 0; border: 1px solid var(--border); }
+        .history-info { flex-grow: 1; }
+        .history-title { font-weight: bold; color: var(--primary); font-size: 15px; margin-bottom: 4px; }
+        .history-date { font-size: 11px; color: #64748b; }
+        .history-amount { font-size: 18px; font-weight: bold; color: var(--success); text-align: right; }
     </style>
 </head>
 <body>
 
     <!-- Popup Slip Modal -->
-    <div id="imageModal" class="img-modal">
+    <div id="imageModal" class="img-modal" onclick="window.closeImageModal()">
         <span class="img-modal-close" onclick="window.closeImageModal()">&times;</span>
-        <img id="modalImgSrc" src="">
-        <div id="modalDetails" class="modal-details">รายละเอียด</div>
+        <img id="modalImgSrc" src="" onclick="event.stopPropagation()">
+        <div id="modalDetails" class="modal-details" onclick="event.stopPropagation()">รายละเอียด</div>
     </div>
 
     <!-- Login Screen -->
@@ -76,7 +79,7 @@
         
         <!-- Tab Nav -->
         <div class="tab-nav">
-            <div class="tab-btn active" onclick="switchTab('calendar')"><span style="font-size:18px">📅</span> ปฏิทิน</div>
+            <div class="tab-btn active" onclick="switchTab('calendar')"><span style="font-size:18px">📅</span> บันทึก</div>
             <div class="tab-btn" onclick="switchTab('summary')"><span style="font-size:18px">📊</span> สรุปออม</div>
             <div class="tab-btn" onclick="switchTab('settings')"><span style="font-size:18px">⚙️</span> ตั้งค่า</div>
             <div class="tab-btn" id="adminTabBtn" onclick="switchTab('admin')" style="display:none; color: #b91c1c;"><span style="font-size:18px">👑</span> แอดมิน</div>
@@ -91,7 +94,7 @@
             <button id="btnLogout" style="background: var(--danger); padding: 6px 12px; margin: 0; width: auto; font-size: 12px;">ออกจากระบบ</button>
         </div>
 
-        <!-- TAB 1: CALENDAR -->
+        <!-- TAB 1: CALENDAR & LOGS -->
         <div id="tab-calendar" class="tab-content active">
             <div class="card">
                 <h2>📝 บันทึกการออมใหม่</h2>
@@ -110,9 +113,16 @@
                 
                 <button id="btnSaveRecord" onclick="window.saveRecord()">💾 บันทึกเงินออม</button>
             </div>
-
+            
+            <!-- เปลี่ยนจากปฏิทินเป็น History List แบบอ่านง่าย -->
             <div class="card">
-                <div id="calendar" style="min-height: 400px;"></div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <h3 style="margin: 0;">📜 ประวัติการออมทั้งหมด</h3>
+                    <div style="font-size: 12px; color: #64748b;">ล่าสุดอยู่บนสุด</div>
+                </div>
+                <div id="savingsHistoryList">
+                    <p style="text-align: center; color: #64748b; font-size: 13px;">กำลังโหลดประวัติ...</p>
+                </div>
             </div>
         </div>
 
@@ -122,7 +132,7 @@
                 <h2 style="color: white; margin-bottom: 5px;">📊 สรุปรายเงินออม</h2>
                 <label style="color: white; font-weight: normal; margin-top: 5px;">เลือกโปรไฟล์สมาชิกที่ต้องการดู:</label>
                 <select id="profileSelect" style="color: black;" onchange="window.loadSummaryData()">
-                    <option value="me">-- โหลดข้อมูลตัวเอง --</option>
+                    <option value="me">-- โหลดข้อมูลของฉัน --</option>
                 </select>
             </div>
             
@@ -176,15 +186,14 @@
         import { getFirestore, doc, setDoc, getDoc, collection, addDoc, deleteDoc, onSnapshot, query, getDocs } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
         // คอนฟิกของคุณ
-            const firebaseConfig = {
-              apiKey: "AIzaSyCZZBEeru3bf_1hHv8ZXSo_a9GkZVn0SlQ",
-              authDomain: "money-app-8ef70.firebaseapp.com",
-              projectId: "money-app-8ef70",
-              storageBucket: "money-app-8ef70.firebasestorage.app",
-              messagingSenderId: "273279807677",
-              appId: "1:273279807677:web:bf2f2fd1ef0b7c823e07d4",
-              measurementId: "G-ML19RN3401"
-            };
+        const firebaseConfig = {
+            apiKey: "AIzaSyCZZBEeru3bf_1hHv8ZXSo_a9GkZVn0SlQ",
+            authDomain: "money-app-8ef70.firebaseapp.com",
+            projectId: "money-app-8ef70",
+            storageBucket: "money-app-8ef70.firebasestorage.app",
+            messagingSenderId: "273279807677",
+            appId: "1:273279807677:web:bf2f2fd1ef0b7c823e07d4"
+        };
 
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -197,7 +206,6 @@
         window.currentUser = null;
         let activities = [];
         let savings = [];
-        let calendar;
         let unsubActivities = null;
         let unsubSavings = null;
 
@@ -208,11 +216,16 @@
             event.currentTarget.classList.add('active');
             document.getElementById('tab-' + tabId).classList.add('active');
             
-            if(tabId === 'calendar') { setTimeout(() => { if(calendar) calendar.render(); }, 100); }
-            if(tabId === 'summary') { window.loadSummaryData(); }
+            if(tabId === 'calendar') { renderSavingsHistory(); }
+            if(tabId === 'summary') { window.loadSummaryData(); window.populateProfileSelect(); }
             if(tabId === 'admin' && window.currentUser && window.currentUser.email === ADMIN_EMAIL) { window.loadAdminPanel(); }
         };
 
+        window.openImageModal = (url, title, details) => {
+            document.getElementById('modalImgSrc').src = url;
+            document.getElementById('modalDetails').innerHTML = `<b>${title}</b><br>${details}`;
+            document.getElementById('imageModal').style.display = 'flex';
+        }
         window.closeImageModal = () => { document.getElementById('imageModal').style.display = 'none'; }
 
         // Auth Logic
@@ -254,10 +267,8 @@
                     
                     document.getElementById('saveDate').valueAsDate = new Date();
                     
-                    initCalendar();
                     subscribeData(user.uid);
-                    window.populateProfileSelect();
-
+                    
                 } catch (error) { console.error("Auth Error:", error); }
             } else {
                 window.currentUser = null;
@@ -272,11 +283,14 @@
         function subscribeData(uid) {
             unsubActivities = onSnapshot(collection(db, "users", uid, "activities"), (snap) => {
                 activities = []; snap.forEach(d => activities.push({ id: d.id, ...d.data() }));
-                updateActivityDropdown(); renderActivityList(); renderSummaryContent(activities, savings);
+                updateActivityDropdown(); renderActivityList(); 
+                if(document.getElementById('tab-calendar').classList.contains('active')) renderSavingsHistory();
+                if(document.getElementById('tab-summary').classList.contains('active') && document.getElementById('profileSelect').value === "me") renderSummaryContent(activities, savings);
             });
             unsubSavings = onSnapshot(collection(db, "users", uid, "savings"), (snap) => {
                 savings = []; snap.forEach(d => savings.push({ id: d.id, ...d.data() }));
-                updateCalendarEvents(); renderSummaryContent(activities, savings);
+                if(document.getElementById('tab-calendar').classList.contains('active')) renderSavingsHistory();
+                if(document.getElementById('tab-summary').classList.contains('active') && document.getElementById('profileSelect').value === "me") renderSummaryContent(activities, savings);
             });
         }
 
@@ -341,7 +355,6 @@
                 const formData = new FormData(); 
                 formData.append("image", fileInput.files[0]);
                 
-                // ใช้ ImgBB แบบตรงๆ แก้ไขปัญหา
                 const res = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, { method: "POST", body: formData });
                 const data = await res.json();
                 
@@ -358,59 +371,64 @@
             finally { btn.disabled = false; btn.innerText = "💾 บันทึกเงินออม"; }
         }
 
-        // Calendar
-        function initCalendar() {
-            const calEl = document.getElementById('calendar');
-            calendar = new FullCalendar.Calendar(calEl, {
-                initialView: 'dayGridMonth',
-                locale: 'th',
-                height: 450,
-                headerToolbar: { left: 'prev,next', center: 'title', right: 'today' },
-                eventClick: function(info) {
-                    const props = info.event.extendedProps;
-                    document.getElementById('modalImgSrc').src = props.slipUrl;
-                    document.getElementById('modalDetails').innerHTML = `<b>${info.event.title}</b><br>วันที่: ${info.event.startStr}<br>บัญชี: ${props.account}`;
-                    document.getElementById('imageModal').style.display = 'flex';
-                }
-            });
-            calendar.render();
-        }
+        // Render History List (Replaces Calendar)
+        function renderSavingsHistory() {
+            const list = document.getElementById('savingsHistoryList');
+            if(!list) return;
+            list.innerHTML = '';
+            
+            if(savings.length === 0) {
+                list.innerHTML = '<p style="text-align: center; color: #64748b; font-size: 13px;">ยังไม่มีประวัติการออม</p>';
+                return;
+            }
 
-        function updateCalendarEvents() {
-            if(!calendar) return;
-            calendar.removeAllEvents();
-            savings.forEach(save => {
+            const sortedSavings = [...savings].sort((a,b) => b.timestamp - a.timestamp);
+
+            sortedSavings.forEach(save => {
                 const act = activities.find(a => a.id === save.activityId);
-                if(act) {
-                    calendar.addEvent({
-                        title: `${act.name}: ${save.amount}฿`,
-                        start: save.dateStr,
-                        backgroundColor: 'var(--success)',
-                        borderColor: '#047857',
-                        extendedProps: { slipUrl: save.slipUrl, account: act.account }
-                    });
-                }
+                const actName = act ? act.name : 'ไม่ทราบกิจกรรม (อาจถูกลบ)';
+                const actAccount = act ? act.account : '-';
+                const dateParts = save.dateStr.split('-');
+                const displayDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+
+                list.innerHTML += `
+                    <div class="history-item">
+                        <img src="${save.slipUrl}" class="history-img" onclick="window.openImageModal('${save.slipUrl}', '${actName}', 'วันที่: ${displayDate}<br>บัญชี: ${actAccount}<br>ยอดเงิน: ${save.amount.toLocaleString()} บาท')" alt="slip">
+                        <div class="history-info">
+                            <div class="history-title">${actName}</div>
+                            <div class="history-date">📅 ${displayDate}</div>
+                            <div class="history-date" style="margin-top: 2px;">🏦 ${actAccount}</div>
+                        </div>
+                        <div class="history-amount">
+                            +${save.amount.toLocaleString()} ฿
+                        </div>
+                    </div>
+                `;
             });
         }
 
         // Summary
         window.populateProfileSelect = async () => {
-            if(window.currentUser.email === ADMIN_EMAIL) {
-                const sel = document.getElementById('profileSelect');
+            const sel = document.getElementById('profileSelect');
+            sel.innerHTML = '<option value="me">-- โหลดข้อมูลของฉัน --</option>';
+            
+            try {
                 const snap = await getDocs(collection(db, "users"));
-                sel.innerHTML = '<option value="me">-- โทรลข้อมูลของฉัน --</option>';
                 snap.forEach(doc => {
                     if(doc.id !== window.currentUser.uid) {
-                        sel.innerHTML += `<option value="${doc.id}">${doc.data().displayName || doc.data().email}</option>`;
+                        const displayName = doc.data().displayName || doc.data().email || 'สมาชิกไม่มีชื่อ';
+                        sel.innerHTML += `<option value="${doc.id}">${displayName}</option>`;
                     }
                 });
+            } catch (e) {
+                console.warn("ไม่สามารถโหลดรายชื่อได้", e);
             }
         }
 
         window.loadSummaryData = async () => {
             const selId = document.getElementById('profileSelect').value;
             if(selId === "me" || !selId) {
-                renderSummaryContent(activities, savings); // ใช้ข้อมูลตัวเองที่ sync ไว้
+                renderSummaryContent(activities, savings); 
             } else {
                 document.getElementById('summaryDashboard').innerHTML = '<p style="text-align:center;">⏳ กำลังโหลดข้อมูลสมาชิก...</p>';
                 try {
