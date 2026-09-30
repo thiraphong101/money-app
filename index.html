@@ -262,7 +262,12 @@
                 window.fetchAllSavingsForCalendar();
                 setTimeout(() => { if(calendar) calendar.render(); }, 100); 
             }
-            if(tabId === 'summary') { window.loadSummaryData(); window.populateProfileSelect(); }
+            if(tabId === 'summary') { 
+                // ใช้ Promise เพื่อรอให้ Dropdown อัปเดตเสร็จก่อนโหลดข้อมูล
+                window.populateProfileSelect().then(() => {
+                    window.loadSummaryData(); 
+                });
+            }
             if(tabId === 'admin' && window.currentUser && window.currentUser.email === ADMIN_EMAIL) { window.loadAdminPanel(); }
         };
 
@@ -432,7 +437,6 @@
 
             try {
                 if (window.currentEditActId) {
-                    // โหมดแก้ไข
                     await setDoc(doc(db, "users", window.currentUser.uid, "activities", window.currentEditActId), { 
                         name, goal, account, deadline, timestamp: Date.now() 
                     }, { merge: true });
@@ -442,7 +446,6 @@
                     btn.style.background = 'var(--success)';
                     alert("✅ แก้ไขกิจกรรมสำเร็จ");
                 } else {
-                    // โหมดเพิ่มใหม่
                     await addDoc(collection(db, "users", window.currentUser.uid, "activities"), { 
                         name, goal, account, deadline, timestamp: Date.now() 
                     });
@@ -647,8 +650,11 @@
         // Summary
         window.populateProfileSelect = async () => {
             const sel = document.getElementById('profileSelect');
+            const prevVal = sel.value; // จำค่าเดิมที่เลือกไว้
+            
             const myName = window.currentUser.displayName || window.currentUser.email || 'ฉัน';
             sel.innerHTML = `<option value="me">👤 ${myName} (ตัวฉัน)</option>`;
+            
             try {
                 const snap = await getDocs(collection(db, "users"));
                 snap.forEach(doc => {
@@ -657,6 +663,11 @@
                         sel.innerHTML += `<option value="${doc.id}">👤 ${displayName}</option>`;
                     }
                 });
+                
+                // คืนค่าที่เลือกไว้ ถ้ามี
+                if(prevVal) {
+                    sel.value = prevVal;
+                }
             } catch (e) { console.warn("ไม่สามารถโหลดรายชื่อได้", e); }
         }
 
