@@ -5,8 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Savings Tracker (Pro Theme)</title>
     
-    <!-- FontAwesome -->
+    <!-- FontAwesome & FullCalendar -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@5.11.3/main.min.js"></script>
 
     <style>
         :root { --primary: #2563eb; --success: #10b981; --warning: #f59e0b; --danger: #ef4444; --bg: #f1f5f9; --card: #ffffff; --text: #1e293b; --border: #cbd5e1; }
@@ -45,13 +47,17 @@
         .img-modal-close { color: white; font-size: 35px; font-weight: bold; position: absolute; top: 15px; right: 25px; cursor: pointer; z-index: 1001; }
         .modal-details { color: white; font-size: 16px; margin-top: 15px; text-align: center; }
         
-        /* --- NEW STYLES FOR HISTORY LOG --- */
+        /* History Log & Calendar */
         .history-item { background: white; border: 1px solid var(--border); padding: 12px; border-radius: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
         .history-img { width: 60px; height: 60px; border-radius: 8px; object-fit: cover; background: #e2e8f0; cursor: pointer; flex-shrink: 0; border: 1px solid var(--border); }
         .history-info { flex-grow: 1; }
-        .history-title { font-weight: bold; color: var(--primary); font-size: 15px; margin-bottom: 4px; }
+        .history-title { font-weight: bold; font-size: 15px; margin-bottom: 4px; }
         .history-date { font-size: 11px; color: #64748b; }
-        .history-amount { font-size: 18px; font-weight: bold; color: var(--success); text-align: right; }
+        .history-amount { font-size: 16px; font-weight: bold; color: var(--success); text-align: right; }
+        
+        .fc-event { cursor: pointer; text-align: center; }
+        .fc-toolbar-title { font-size: 1.2em !important; }
+        .fc-event-main { padding: 2px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -114,15 +120,21 @@
                 <button id="btnSaveRecord" onclick="window.saveRecord()">💾 บันทึกเงินออม</button>
             </div>
             
-            <!-- เปลี่ยนจากปฏิทินเป็น History List แบบอ่านง่าย -->
+            <!-- History List -->
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <h3 style="margin: 0;">📜 ประวัติการออมทั้งหมด</h3>
                     <div style="font-size: 12px; color: #64748b;">ล่าสุดอยู่บนสุด</div>
                 </div>
-                <div id="savingsHistoryList">
+                <div id="savingsHistoryList" style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
                     <p style="text-align: center; color: #64748b; font-size: 13px;">กำลังโหลดประวัติ...</p>
                 </div>
+            </div>
+
+            <!-- Calendar Section -->
+            <div class="card">
+                <h3 style="margin-bottom: 15px;">📅 ปฏิทินการออม</h3>
+                <div id="calendar" style="min-height: 350px;"></div>
             </div>
         </div>
 
@@ -203,9 +215,13 @@
         const ADMIN_EMAIL = "deathnoreason101@gmail.com";
         const IMGBB_API_KEY = "234c872cda662b81fffc54fd6d547ea6";
         
+        // ชุดสีสำหรับแยกกิจกรรมในประวัติและปฏิทิน
+        const activityColors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
+        
         window.currentUser = null;
         let activities = [];
         let savings = [];
+        let calendar = null;
         let unsubActivities = null;
         let unsubSavings = null;
 
@@ -216,7 +232,10 @@
             event.currentTarget.classList.add('active');
             document.getElementById('tab-' + tabId).classList.add('active');
             
-            if(tabId === 'calendar') { renderSavingsHistory(); }
+            if(tabId === 'calendar') { 
+                renderSavingsHistory(); 
+                setTimeout(() => { if(calendar) calendar.render(); }, 100); 
+            }
             if(tabId === 'summary') { window.loadSummaryData(); window.populateProfileSelect(); }
             if(tabId === 'admin' && window.currentUser && window.currentUser.email === ADMIN_EMAIL) { window.loadAdminPanel(); }
         };
@@ -267,6 +286,7 @@
                     
                     document.getElementById('saveDate').valueAsDate = new Date();
                     
+                    initCalendar();
                     subscribeData(user.uid);
                     
                 } catch (error) { console.error("Auth Error:", error); }
@@ -284,12 +304,16 @@
             unsubActivities = onSnapshot(collection(db, "users", uid, "activities"), (snap) => {
                 activities = []; snap.forEach(d => activities.push({ id: d.id, ...d.data() }));
                 updateActivityDropdown(); renderActivityList(); 
-                if(document.getElementById('tab-calendar').classList.contains('active')) renderSavingsHistory();
+                if(document.getElementById('tab-calendar').classList.contains('active')) {
+                    renderSavingsHistory(); updateCalendarEvents();
+                }
                 if(document.getElementById('tab-summary').classList.contains('active') && document.getElementById('profileSelect').value === "me") renderSummaryContent(activities, savings);
             });
             unsubSavings = onSnapshot(collection(db, "users", uid, "savings"), (snap) => {
                 savings = []; snap.forEach(d => savings.push({ id: d.id, ...d.data() }));
-                if(document.getElementById('tab-calendar').classList.contains('active')) renderSavingsHistory();
+                if(document.getElementById('tab-calendar').classList.contains('active')) {
+                    renderSavingsHistory(); updateCalendarEvents();
+                }
                 if(document.getElementById('tab-summary').classList.contains('active') && document.getElementById('profileSelect').value === "me") renderSummaryContent(activities, savings);
             });
         }
@@ -313,11 +337,12 @@
             const container = document.getElementById('activityList'); container.innerHTML = '';
             if(activities.length === 0) { container.innerHTML = '<p style="color:#64748b; font-size:14px; text-align:center;">ยังไม่มีกิจกรรม</p>'; return; }
             
-            activities.sort((a,b) => b.timestamp - a.timestamp).forEach(act => {
+            activities.sort((a,b) => b.timestamp - a.timestamp).forEach((act, idx) => {
+                const color = activityColors[idx % activityColors.length];
                 container.innerHTML += `
-                    <div style="background: #f8fafc; border: 1px solid var(--border); padding: 12px; border-radius: 8px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
+                    <div style="background: #f8fafc; border: 1px solid var(--border); border-left: 5px solid ${color}; padding: 12px; border-radius: 8px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
-                            <div style="font-weight:bold; color:var(--primary);">${act.name}</div>
+                            <div style="font-weight:bold; color:${color};">${act.name}</div>
                             <div style="font-size:12px; color:#64748b;">เป้าหมาย: ${act.goal.toLocaleString()} ฿ | บัญชี: ${act.account||'-'}</div>
                         </div>
                         <button class="del-btn" onclick="window.deleteActivity('${act.id}')">ลบ</button>
@@ -371,7 +396,7 @@
             finally { btn.disabled = false; btn.innerText = "💾 บันทึกเงินออม"; }
         }
 
-        // Render History List (Replaces Calendar)
+        // Render History List
         function renderSavingsHistory() {
             const list = document.getElementById('savingsHistoryList');
             if(!list) return;
@@ -385,25 +410,82 @@
             const sortedSavings = [...savings].sort((a,b) => b.timestamp - a.timestamp);
 
             sortedSavings.forEach(save => {
-                const act = activities.find(a => a.id === save.activityId);
+                const actIndex = activities.findIndex(a => a.id === save.activityId);
+                const act = actIndex >= 0 ? activities[actIndex] : null;
+                
                 const actName = act ? act.name : 'ไม่ทราบกิจกรรม (อาจถูกลบ)';
                 const actAccount = act ? act.account : '-';
                 const dateParts = save.dateStr.split('-');
                 const displayDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
+                
+                // กำหนดสีให้ตรงกับกิจกรรม
+                const color = actIndex >= 0 ? activityColors[actIndex % activityColors.length] : '#64748b';
 
                 list.innerHTML += `
-                    <div class="history-item">
+                    <div class="history-item" style="border-left: 5px solid ${color};">
                         <img src="${save.slipUrl}" class="history-img" onclick="window.openImageModal('${save.slipUrl}', '${actName}', 'วันที่: ${displayDate}<br>บัญชี: ${actAccount}<br>ยอดเงิน: ${save.amount.toLocaleString()} บาท')" alt="slip">
                         <div class="history-info">
-                            <div class="history-title">${actName}</div>
+                            <div class="history-title" style="color: ${color};">${actName}</div>
                             <div class="history-date">📅 ${displayDate}</div>
                             <div class="history-date" style="margin-top: 2px;">🏦 ${actAccount}</div>
                         </div>
-                        <div class="history-amount">
-                            +${save.amount.toLocaleString()} ฿
+                        <div style="text-align: right; display:flex; flex-direction:column; align-items:flex-end;">
+                            <div class="history-amount" style="color: ${color};">+${save.amount.toLocaleString()} ฿</div>
+                            <button class="del-btn" style="padding: 4px 8px; margin-top: 6px;" onclick="window.deleteSavingRecord('${save.id}')">ลบ</button>
                         </div>
                     </div>
                 `;
+            });
+        }
+        
+        window.deleteSavingRecord = async (saveId) => {
+            if(confirm("⚠️ ยืนยันการลบประวัติการออมนี้ใช่ไหม? (ข้อมูลในสรุปและปฏิทินจะถูกลบไปด้วย)")) {
+                try {
+                    await deleteDoc(doc(db, "users", window.currentUser.uid, "savings", saveId));
+                } catch(e) { alert("เกิดข้อผิดพลาดในการลบ: " + e.message); }
+            }
+        }
+
+        // Calendar
+        function initCalendar() {
+            const calEl = document.getElementById('calendar');
+            calendar = new FullCalendar.Calendar(calEl, {
+                initialView: 'dayGridMonth',
+                locale: 'th',
+                height: 380,
+                headerToolbar: { left: 'prev,next', center: 'title', right: 'today' },
+                eventClick: function(info) {
+                    const props = info.event.extendedProps;
+                    document.getElementById('modalImgSrc').src = props.slipUrl;
+                    document.getElementById('modalDetails').innerHTML = `<b>${props.actName}</b><br>วันที่: ${info.event.startStr}<br>บัญชี: ${props.account}<br>ยอดเงิน: ${props.amount} บาท`;
+                    document.getElementById('imageModal').style.display = 'flex';
+                }
+            });
+            calendar.render();
+        }
+
+        function updateCalendarEvents() {
+            if(!calendar) return;
+            calendar.removeAllEvents();
+            savings.forEach(save => {
+                const actIndex = activities.findIndex(a => a.id === save.activityId);
+                const act = actIndex >= 0 ? activities[actIndex] : null;
+                
+                if(act) {
+                    const color = activityColors[actIndex % activityColors.length];
+                    calendar.addEvent({
+                        title: `+${save.amount.toLocaleString()} ฿`,
+                        start: save.dateStr,
+                        backgroundColor: color,
+                        borderColor: color,
+                        extendedProps: { 
+                            slipUrl: save.slipUrl, 
+                            account: act.account, 
+                            actName: act.name,
+                            amount: save.amount.toLocaleString()
+                        }
+                    });
+                }
             });
         }
 
@@ -411,7 +493,6 @@
         window.populateProfileSelect = async () => {
             const sel = document.getElementById('profileSelect');
             sel.innerHTML = '<option value="me">-- โหลดข้อมูลของฉัน --</option>';
-            
             try {
                 const snap = await getDocs(collection(db, "users"));
                 snap.forEach(doc => {
@@ -420,9 +501,7 @@
                         sel.innerHTML += `<option value="${doc.id}">${displayName}</option>`;
                     }
                 });
-            } catch (e) {
-                console.warn("ไม่สามารถโหลดรายชื่อได้", e);
-            }
+            } catch (e) { console.warn("ไม่สามารถโหลดรายชื่อได้", e); }
         }
 
         window.loadSummaryData = async () => {
@@ -446,7 +525,8 @@
             const board = document.getElementById('summaryDashboard'); board.innerHTML = '';
             if(acts.length === 0) { board.innerHTML = '<div class="card" style="text-align:center; color:#64748b;">ยังไม่มีข้อมูลกิจกรรม</div>'; return; }
 
-            acts.forEach(act => {
+            acts.forEach((act, idx) => {
+                const color = activityColors[idx % activityColors.length];
                 const relatedSavs = savs.filter(s => s.activityId === act.id);
                 const total = relatedSavs.reduce((sum, s) => sum + s.amount, 0);
                 const pct = Math.min((total / act.goal) * 100, 100).toFixed(1);
@@ -467,11 +547,11 @@
                 } else if(total >= act.goal) predictText = "<span style='color:var(--success)'>🎉 บรรลุเป้าหมายแล้ว!</span>";
 
                 board.innerHTML += `
-                    <div class="card" style="border-left: 5px solid var(--primary); margin: 15px 0;">
-                        <h3 style="color:var(--primary); margin-bottom:5px;">${act.name}</h3>
+                    <div class="card" style="border-left: 5px solid ${color}; margin: 15px 0;">
+                        <h3 style="color:${color}; margin-bottom:5px;">${act.name}</h3>
                         <div style="font-size:12px; color:#64748b; margin-bottom:10px;">เป้าหมาย: ${act.goal.toLocaleString()} บาท | บัญชี: ${act.account||'-'}</div>
                         <div style="font-size:24px; font-weight:bold; color:var(--text);">${total.toLocaleString()} ฿</div>
-                        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%;"></div></div>
+                        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%; background:${color};"></div></div>
                         <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:5px; color:#64748b;">
                             <span>ความคืบหน้า ${pct}%</span>
                             <span>${predictText}</span>
