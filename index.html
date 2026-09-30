@@ -171,12 +171,14 @@
                 <input type="number" id="actGoal" inputmode="decimal">
                 
                 <label>บัญชีที่ใช้เก็บเงิน:</label>
-                <!-- ใช้ Datalist เพื่อให้เลือกได้และพิมพ์เองได้ -->
                 <input type="text" id="actAccount" placeholder="เลือกบัญชีหรือพิมพ์เอง..." list="accountOptions">
                 <datalist id="accountOptions">
                     <option value="กสิกร 2008799760">
                     <option value="กรุงศรี 8029387683">
                 </datalist>
+
+                <label>วันครบกำหนดเป้าหมาย (เลือกได้):</label>
+                <input type="date" id="actDeadline">
 
                 <button id="btnAddActivity" onclick="window.addActivity()" style="background: var(--success);">+ เพิ่มกิจกรรม</button>
             </div>
@@ -424,13 +426,15 @@
             const name = document.getElementById('actName').value;
             const goal = parseFloat(document.getElementById('actGoal').value);
             const account = document.getElementById('actAccount').value;
+            const deadline = document.getElementById('actDeadline').value;
             
             if(!name || !goal) return alert("กรุณากรอกชื่อและเป้าหมายเงินออม");
 
             try {
                 if (window.currentEditActId) {
+                    // โหมดแก้ไข
                     await setDoc(doc(db, "users", window.currentUser.uid, "activities", window.currentEditActId), { 
-                        name, goal, account, timestamp: Date.now() 
+                        name, goal, account, deadline, timestamp: Date.now() 
                     }, { merge: true });
                     window.currentEditActId = null;
                     const btn = document.getElementById('btnAddActivity');
@@ -438,14 +442,16 @@
                     btn.style.background = 'var(--success)';
                     alert("✅ แก้ไขกิจกรรมสำเร็จ");
                 } else {
+                    // โหมดเพิ่มใหม่
                     await addDoc(collection(db, "users", window.currentUser.uid, "activities"), { 
-                        name, goal, account, timestamp: Date.now() 
+                        name, goal, account, deadline, timestamp: Date.now() 
                     });
                     alert("✅ เพิ่มกิจกรรมสำเร็จ");
                 }
                 document.getElementById('actName').value = ''; 
                 document.getElementById('actGoal').value = ''; 
                 document.getElementById('actAccount').value = '';
+                document.getElementById('actDeadline').value = '';
                 
                 window.fetchAllSavingsForCalendar(); // Update global cal
             } catch (e) { alert("Error: " + e.message); }
@@ -458,6 +464,7 @@
             document.getElementById('actName').value = act.name;
             document.getElementById('actGoal').value = act.goal;
             document.getElementById('actAccount').value = act.account || '';
+            document.getElementById('actDeadline').value = act.deadline || '';
             
             window.currentEditActId = id;
             
@@ -474,11 +481,17 @@
             
             activities.sort((a,b) => b.timestamp - a.timestamp).forEach((act, idx) => {
                 const color = activityColors[idx % activityColors.length];
+                let dlText = "";
+                if (act.deadline) {
+                    const dp = act.deadline.split('-');
+                    dlText = ` | ครบกำหนด: ${dp[2]}/${dp[1]}/${dp[0]}`;
+                }
+
                 container.innerHTML += `
                     <div style="background: #f8fafc; border: 1px solid var(--border); border-left: 5px solid ${color}; padding: 12px; border-radius: 8px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center;">
                         <div>
                             <div style="font-weight:bold; color:${color};">${act.name}</div>
-                            <div style="font-size:12px; color:#64748b;">เป้าหมาย: ${act.goal.toLocaleString()} ฿ | บัญชี: ${act.account||'-'}</div>
+                            <div style="font-size:12px; color:#64748b;">เป้าหมาย: ${act.goal.toLocaleString()} ฿ | บัญชี: ${act.account||'-'}${dlText}</div>
                         </div>
                         <div style="display:flex; gap: 6px;">
                             <button class="edit-btn" onclick="window.editActivity('${act.id}')">แก้ไข</button>
@@ -598,9 +611,7 @@
                     const props = info.event.extendedProps;
                     const clickedDate = props.dateStr;
                     
-                    // หากลุ่มสลิปทั้งหมดของวันนี้ เพื่อใช้ในระบบเลื่อนรูป Modal
                     window.currentModalEvents = window.allUsersSavings.filter(s => s.dateStr === clickedDate);
-                    // หา index ของตัวที่ถูกคลิก
                     window.currentModalIndex = window.currentModalEvents.findIndex(s => s.slipUrl === props.slipUrl && s.amount === props.amount && s.userName === props.userName);
                     if(window.currentModalIndex === -1) window.currentModalIndex = 0;
                     
@@ -676,31 +687,50 @@
                 const total = relatedSavs.reduce((sum, s) => sum + s.amount, 0);
                 const pct = Math.min((total / act.goal) * 100, 100).toFixed(1);
                 
-                let predictText = "ยังคำนวณคาดการณ์ไม่ได้";
-                if(relatedSavs.length >= 2) {
+                let remainText = "";
+                let predictText = "";
+                const remain = act.goal - total;
+
+                if (remain <= 0) {
+                    remainText = "🎉 ครบเป้าหมายแล้ว";
+                } else {
+                    remainText = `ขาดอีก ${remain.toLocaleString()} ฿`;
+                }
+
+                if(relatedSavs.length >= 2 && remain > 0) {
                     const dates = relatedSavs.map(s => new Date(s.dateStr).getTime());
                     const minD = Math.min(...dates); const maxD = Math.max(...dates);
                     const days = Math.ceil((maxD - minD) / (1000*60*60*24)) || 1;
                     const avg = total / days;
-                    const remain = act.goal - total;
-                    if(remain <= 0) predictText = "<span style='color:var(--success)'>🎉 บรรลุเป้าหมายแล้ว!</span>";
-                    else if(avg > 0) {
+                    if(avg > 0) {
                         const dLeft = Math.ceil(remain / avg);
                         const finish = new Date(); finish.setDate(finish.getDate() + dLeft);
-                        predictText = `คาดว่าจะสำเร็จ: <b>${finish.toLocaleDateString('th-TH')}</b>`;
+                        predictText = `คาดว่าสำเร็จ: ${finish.toLocaleDateString('th-TH')}`;
                     }
-                } else if(total >= act.goal) predictText = "<span style='color:var(--success)'>🎉 บรรลุเป้าหมายแล้ว!</span>";
+                }
+
+                let deadlineText = '-';
+                if(act.deadline) {
+                    const dp = act.deadline.split('-');
+                    deadlineText = `${dp[2]}/${dp[1]}/${dp[0]}`;
+                }
 
                 board.innerHTML += `
                     <div class="card" style="border-left: 5px solid ${color}; margin: 15px 0;">
                         <h3 style="color:${color}; margin-bottom:5px;">${act.name}</h3>
-                        <div style="font-size:12px; color:#64748b; margin-bottom:10px;">เป้าหมาย: ${act.goal.toLocaleString()} บาท | บัญชี: ${act.account||'-'}</div>
-                        <div style="font-size:24px; font-weight:bold; color:var(--text);">${total.toLocaleString()} ฿</div>
-                        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%; background:${color};"></div></div>
-                        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:5px; color:#64748b;">
-                            <span>ความคืบหน้า ${pct}%</span>
-                            <span>${predictText}</span>
+                        <div style="font-size:12px; color:#64748b; margin-bottom:10px;">
+                            เป้าหมาย: ${act.goal.toLocaleString()} บาท | บัญชี: ${act.account||'-'} | ครบกำหนด: ${deadlineText}
                         </div>
+                        <div style="font-size:24px; font-weight:bold; color:var(--text);">${total.toLocaleString()} ฿</div>
+                        
+                        <div class="progress-bar-bg"><div class="progress-bar-fill" style="width:${pct}%; background:${color};"></div></div>
+                        
+                        <div style="display:flex; justify-content:space-between; font-size:13px; margin-top:6px; font-weight:bold;">
+                            <span style="color:${color};">คืบหน้า ${pct}%</span>
+                            <span style="color:${remain <= 0 ? 'var(--success)' : 'var(--danger)'};">${remainText}</span>
+                        </div>
+                        
+                        <div style="font-size:11px; text-align:right; margin-top:4px; color:#64748b;">${predictText}</div>
                     </div>`;
             });
         }
