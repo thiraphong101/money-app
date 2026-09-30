@@ -42,11 +42,15 @@
         #appContent { display: none; }
         .user-profile { font-size: 12px; text-align: center; padding: 10px; background: #e2e8f0; margin-bottom: 15px; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; }
         
-        /* Modal */
+        /* Modal & Sliders */
         .img-modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); align-items: center; justify-content: center; flex-direction: column; padding: 20px; box-sizing: border-box;}
-        .img-modal img { max-width: 100%; max-height: 80%; border-radius: 8px; object-fit: contain; }
+        .img-modal img { max-width: 100%; max-height: 75%; border-radius: 8px; object-fit: contain; }
         .img-modal-close { color: white; font-size: 35px; font-weight: bold; position: absolute; top: 15px; right: 25px; cursor: pointer; z-index: 1001; }
-        .modal-details { color: white; font-size: 16px; margin-top: 15px; text-align: center; }
+        .img-modal-nav { position: absolute; top: 50%; transform: translateY(-50%); color: white; font-size: 30px; font-weight: bold; cursor: pointer; padding: 15px; background: rgba(255,255,255,0.15); border-radius: 50%; user-select: none; z-index: 1001; backdrop-filter: blur(4px); display: none; }
+        .img-modal-nav:active { background: rgba(255,255,255,0.3); }
+        .img-modal-nav.left { left: 10px; }
+        .img-modal-nav.right { right: 10px; }
+        .modal-details { color: white; font-size: 14px; margin-top: 15px; text-align: center; background: rgba(0,0,0,0.6); padding: 10px 20px; border-radius: 12px; }
         
         /* History Log & Calendar */
         .history-item { background: white; border: 1px solid var(--border); padding: 12px; border-radius: 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 15px; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
@@ -56,9 +60,9 @@
         .history-date { font-size: 11px; color: #64748b; }
         .history-amount { font-size: 16px; font-weight: bold; color: var(--success); text-align: right; }
         
-        .fc-event { cursor: pointer; text-align: center; }
+        .fc-event { cursor: pointer; text-align: left; }
         .fc-toolbar-title { font-size: 1.2em !important; }
-        .fc-event-main { padding: 2px; font-weight: bold; }
+        .fc-event-main { padding: 3px; font-size: 11px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; }
     </style>
 </head>
 <body>
@@ -66,7 +70,9 @@
     <!-- Popup Slip Modal -->
     <div id="imageModal" class="img-modal" onclick="window.closeImageModal()">
         <span class="img-modal-close" onclick="window.closeImageModal()">&times;</span>
+        <span class="img-modal-nav left" onclick="window.prevModalImage(event)">&#10094;</span>
         <img id="modalImgSrc" src="" onclick="event.stopPropagation()">
+        <span class="img-modal-nav right" onclick="window.nextModalImage(event)">&#10095;</span>
         <div id="modalDetails" class="modal-details" onclick="event.stopPropagation()">รายละเอียด</div>
     </div>
 
@@ -121,10 +127,10 @@
                 <button id="btnSaveRecord" onclick="window.saveRecord()">💾 บันทึกเงินออม</button>
             </div>
             
-            <!-- History List -->
+            <!-- History List (Personal) -->
             <div class="card">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <h3 style="margin: 0;">📜 ประวัติการออมทั้งหมด</h3>
+                    <h3 style="margin: 0;">📜 ประวัติการออมของคุณ</h3>
                     <div style="font-size: 12px; color: #64748b;">ล่าสุดอยู่บนสุด</div>
                 </div>
                 <div id="savingsHistoryList" style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
@@ -132,10 +138,11 @@
                 </div>
             </div>
 
-            <!-- Calendar Section -->
+            <!-- Global Calendar Section -->
             <div class="card">
-                <h3 style="margin-bottom: 15px;">📅 ปฏิทินการออม</h3>
-                <div id="calendar" style="min-height: 350px;"></div>
+                <h3 style="margin-bottom: 5px;">📅 ปฏิทินรวม (สมาชิกทุกคน)</h3>
+                <p style="font-size: 11px; color: #64748b; margin-top: 0; margin-bottom: 15px;">กดที่แถบในปฏิทินเพื่อดูสลิปของสมาชิกคนอื่นๆ</p>
+                <div id="calendar" style="min-height: 380px;"></div>
             </div>
         </div>
 
@@ -145,7 +152,7 @@
                 <h2 style="color: white; margin-bottom: 5px;">📊 สรุปรายเงินออม</h2>
                 <label style="color: white; font-weight: normal; margin-top: 5px;">เลือกโปรไฟล์สมาชิกที่ต้องการดู:</label>
                 <select id="profileSelect" style="color: black;" onchange="window.loadSummaryData()">
-                    <option value="me">-- โหลดข้อมูลของฉัน --</option>
+                    <option value="me">-- โหลดข้อมูล --</option>
                 </select>
             </div>
             
@@ -223,17 +230,22 @@
         const ADMIN_EMAIL = "deathnoreason101@gmail.com";
         const IMGBB_API_KEY = "234c872cda662b81fffc54fd6d547ea6";
         
-        // ชุดสีสำหรับแยกกิจกรรมในประวัติและปฏิทิน
+        // ชุดสีสำหรับแยกกิจกรรม
         const activityColors = ['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#84cc16'];
         
         window.currentUser = null;
         let activities = [];
         let savings = [];
+        
+        // สำหรับปฏิทินรวม
         let calendar = null;
+        window.allUsersSavings = [];
+        window.currentModalEvents = [];
+        window.currentModalIndex = 0;
+
         let unsubActivities = null;
         let unsubSavings = null;
         
-        // ตัวแปรสำหรับเช็คว่ากำลังแก้ไขกิจกรรมไหนอยู่
         window.currentEditActId = null;
 
         // UI Functions
@@ -245,18 +257,57 @@
             
             if(tabId === 'calendar') { 
                 renderSavingsHistory(); 
+                window.fetchAllSavingsForCalendar();
                 setTimeout(() => { if(calendar) calendar.render(); }, 100); 
             }
             if(tabId === 'summary') { window.loadSummaryData(); window.populateProfileSelect(); }
             if(tabId === 'admin' && window.currentUser && window.currentUser.email === ADMIN_EMAIL) { window.loadAdminPanel(); }
         };
 
-        window.openImageModal = (url, title, details) => {
+        // Modal Slider Logic
+        window.updateCalendarModalContent = () => {
+            const ev = window.currentModalEvents[window.currentModalIndex];
+            if(!ev) return;
+            document.getElementById('modalImgSrc').src = ev.slipUrl;
+            document.getElementById('modalDetails').innerHTML = `
+                <div style="font-size:18px; color:var(--success); font-weight:bold; margin-bottom:5px;">+${ev.amount.toLocaleString()} ฿</div>
+                <div style="font-size:14px;"><b>${ev.actName}</b> (${ev.userName})</div>
+                <div style="font-size:12px; color:#cbd5e1; margin-top:4px;">วันที่: ${ev.displayDate} | บัญชี: ${ev.account}</div>
+                <div style="font-size:11px; margin-top:8px; opacity:0.8;">รูปที่ ${window.currentModalIndex + 1} จาก ${window.currentModalEvents.length} ในวันนี้</div>
+            `;
+            
+            const navs = document.querySelectorAll('.img-modal-nav');
+            if(window.currentModalEvents.length > 1) {
+                navs.forEach(n => n.style.display = 'block');
+            } else {
+                navs.forEach(n => n.style.display = 'none');
+            }
+        }
+
+        window.prevModalImage = (e) => {
+            e.stopPropagation();
+            if(window.currentModalEvents.length <= 1) return;
+            window.currentModalIndex = (window.currentModalIndex - 1 + window.currentModalEvents.length) % window.currentModalEvents.length;
+            window.updateCalendarModalContent();
+        }
+
+        window.nextModalImage = (e) => {
+            e.stopPropagation();
+            if(window.currentModalEvents.length <= 1) return;
+            window.currentModalIndex = (window.currentModalIndex + 1) % window.currentModalEvents.length;
+            window.updateCalendarModalContent();
+        }
+
+        window.closeImageModal = () => { document.getElementById('imageModal').style.display = 'none'; }
+        
+        window.openSingleModal = (url, title, details) => {
+            window.currentModalEvents = [{ slipUrl: url, actName: title, userName: 'คุณ', amount: 0, displayDate: '', account: '' }];
+            window.currentModalIndex = 0;
             document.getElementById('modalImgSrc').src = url;
             document.getElementById('modalDetails').innerHTML = `<b>${title}</b><br>${details}`;
+            document.querySelectorAll('.img-modal-nav').forEach(n => n.style.display = 'none');
             document.getElementById('imageModal').style.display = 'flex';
         }
-        window.closeImageModal = () => { document.getElementById('imageModal').style.display = 'none'; }
 
         // Auth Logic
         document.getElementById('btnLogin').onclick = () => signInWithPopup(auth, provider);
@@ -299,6 +350,7 @@
                     
                     initCalendar();
                     subscribeData(user.uid);
+                    window.fetchAllSavingsForCalendar();
                     
                 } catch (error) { console.error("Auth Error:", error); }
             } else {
@@ -316,17 +368,55 @@
                 activities = []; snap.forEach(d => activities.push({ id: d.id, ...d.data() }));
                 updateActivityDropdown(); renderActivityList(); 
                 if(document.getElementById('tab-calendar').classList.contains('active')) {
-                    renderSavingsHistory(); updateCalendarEvents();
+                    renderSavingsHistory(); 
                 }
                 if(document.getElementById('tab-summary').classList.contains('active') && document.getElementById('profileSelect').value === "me") renderSummaryContent(activities, savings);
             });
             unsubSavings = onSnapshot(collection(db, "users", uid, "savings"), (snap) => {
                 savings = []; snap.forEach(d => savings.push({ id: d.id, ...d.data() }));
                 if(document.getElementById('tab-calendar').classList.contains('active')) {
-                    renderSavingsHistory(); updateCalendarEvents();
+                    renderSavingsHistory(); 
                 }
                 if(document.getElementById('tab-summary').classList.contains('active') && document.getElementById('profileSelect').value === "me") renderSummaryContent(activities, savings);
             });
+        }
+
+        // Global Fetch For Calendar
+        window.fetchAllSavingsForCalendar = async () => {
+            try {
+                const usersSnap = await getDocs(collection(db, "users"));
+                let allSavs = [];
+                for(let uDoc of usersSnap.docs) {
+                    const uid = uDoc.id;
+                    const uData = uDoc.data();
+                    const dName = uData.displayName || uData.email || 'ไม่ระบุชื่อ';
+                    
+                    const actSnap = await getDocs(collection(db, "users", uid, "activities"));
+                    let userActs = [];
+                    actSnap.forEach(a => userActs.push({id: a.id, ...a.data()}));
+                    
+                    const savSnap = await getDocs(collection(db, "users", uid, "savings"));
+                    savSnap.forEach(s => {
+                        const sData = s.data();
+                        const actIndex = userActs.findIndex(a => a.id === sData.activityId);
+                        const act = actIndex >= 0 ? userActs[actIndex] : null;
+                        
+                        if(act) {
+                            const dateParts = sData.dateStr.split('-');
+                            allSavs.push({
+                                ...sData,
+                                actName: act.name,
+                                account: act.account || '-',
+                                userName: dName,
+                                color: activityColors[actIndex % activityColors.length],
+                                displayDate: `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`
+                            });
+                        }
+                    });
+                }
+                window.allUsersSavings = allSavs;
+                updateCalendarEvents();
+            } catch(e) { console.warn("Global calendar fetch error:", e); }
         }
 
         // Settings (Add / Edit Activity)
@@ -339,7 +429,6 @@
 
             try {
                 if (window.currentEditActId) {
-                    // โหมดแก้ไข
                     await setDoc(doc(db, "users", window.currentUser.uid, "activities", window.currentEditActId), { 
                         name, goal, account, timestamp: Date.now() 
                     }, { merge: true });
@@ -349,7 +438,6 @@
                     btn.style.background = 'var(--success)';
                     alert("✅ แก้ไขกิจกรรมสำเร็จ");
                 } else {
-                    // โหมดเพิ่มใหม่
                     await addDoc(collection(db, "users", window.currentUser.uid, "activities"), { 
                         name, goal, account, timestamp: Date.now() 
                     });
@@ -358,6 +446,8 @@
                 document.getElementById('actName').value = ''; 
                 document.getElementById('actGoal').value = ''; 
                 document.getElementById('actAccount').value = '';
+                
+                window.fetchAllSavingsForCalendar(); // Update global cal
             } catch (e) { alert("Error: " + e.message); }
         }
 
@@ -371,12 +461,10 @@
             
             window.currentEditActId = id;
             
-            // เปลี่ยนปุ่มเป็นโหมดแก้ไข
             const btn = document.getElementById('btnAddActivity');
             btn.innerText = '💾 บันทึกการแก้ไข';
             btn.style.background = 'var(--warning)';
             
-            // เลื่อนจอขึ้นไปด้านบนเพื่อให้เห็นฟอร์ม
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
 
@@ -403,6 +491,7 @@
         window.deleteActivity = async (id) => {
             if(confirm("ลบกิจกรรมนี้? ข้อมูลการออมในกิจกรรมนี้จะไม่แสดงผล (แต่ยังไม่ถูกลบทิ้ง)")) {
                 await deleteDoc(doc(db, "users", window.currentUser.uid, "activities", id));
+                window.fetchAllSavingsForCalendar();
             }
         }
 
@@ -442,11 +531,13 @@
 
                 document.getElementById('saveAmount').value = ''; fileInput.value = '';
                 alert("✅ บันทึกเงินออมเรียบร้อย!");
+                
+                window.fetchAllSavingsForCalendar(); // Update global cal
             } catch (e) { alert("เกิดข้อผิดพลาด: " + e.message); } 
             finally { btn.disabled = false; btn.innerText = "💾 บันทึกเงินออม"; }
         }
 
-        // Render History List
+        // Render Personal History List
         function renderSavingsHistory() {
             const list = document.getElementById('savingsHistoryList');
             if(!list) return;
@@ -467,13 +558,11 @@
                 const actAccount = act ? act.account : '-';
                 const dateParts = save.dateStr.split('-');
                 const displayDate = `${dateParts[2]}/${dateParts[1]}/${dateParts[0]}`;
-                
-                // กำหนดสีให้ตรงกับกิจกรรม
                 const color = actIndex >= 0 ? activityColors[actIndex % activityColors.length] : '#64748b';
 
                 list.innerHTML += `
                     <div class="history-item" style="border-left: 5px solid ${color};">
-                        <img src="${save.slipUrl}" class="history-img" onclick="window.openImageModal('${save.slipUrl}', '${actName}', 'วันที่: ${displayDate}<br>บัญชี: ${actAccount}<br>ยอดเงิน: ${save.amount.toLocaleString()} บาท')" alt="slip">
+                        <img src="${save.slipUrl}" class="history-img" onclick="window.openSingleModal('${save.slipUrl}', '${actName}', 'วันที่: ${displayDate}<br>บัญชี: ${actAccount}<br>ยอดเงิน: ${save.amount.toLocaleString()} บาท')" alt="slip">
                         <div class="history-info">
                             <div class="history-title" style="color: ${color};">${actName}</div>
                             <div class="history-date">📅 ${displayDate}</div>
@@ -492,22 +581,30 @@
             if(confirm("⚠️ ยืนยันการลบประวัติการออมนี้ใช่ไหม? (ข้อมูลในสรุปและปฏิทินจะถูกลบไปด้วย)")) {
                 try {
                     await deleteDoc(doc(db, "users", window.currentUser.uid, "savings", saveId));
+                    window.fetchAllSavingsForCalendar();
                 } catch(e) { alert("เกิดข้อผิดพลาดในการลบ: " + e.message); }
             }
         }
 
-        // Calendar
+        // Global Calendar
         function initCalendar() {
             const calEl = document.getElementById('calendar');
             calendar = new FullCalendar.Calendar(calEl, {
                 initialView: 'dayGridMonth',
                 locale: 'th',
-                height: 380,
+                height: 400,
                 headerToolbar: { left: 'prev,next', center: 'title', right: 'today' },
                 eventClick: function(info) {
                     const props = info.event.extendedProps;
-                    document.getElementById('modalImgSrc').src = props.slipUrl;
-                    document.getElementById('modalDetails').innerHTML = `<b>${props.actName}</b><br>วันที่: ${info.event.startStr}<br>บัญชี: ${props.account}<br>ยอดเงิน: ${props.amount} บาท`;
+                    const clickedDate = props.dateStr;
+                    
+                    // หากลุ่มสลิปทั้งหมดของวันนี้ เพื่อใช้ในระบบเลื่อนรูป Modal
+                    window.currentModalEvents = window.allUsersSavings.filter(s => s.dateStr === clickedDate);
+                    // หา index ของตัวที่ถูกคลิก
+                    window.currentModalIndex = window.currentModalEvents.findIndex(s => s.slipUrl === props.slipUrl && s.amount === props.amount && s.userName === props.userName);
+                    if(window.currentModalIndex === -1) window.currentModalIndex = 0;
+                    
+                    window.updateCalendarModalContent();
                     document.getElementById('imageModal').style.display = 'flex';
                 }
             });
@@ -517,38 +614,36 @@
         function updateCalendarEvents() {
             if(!calendar) return;
             calendar.removeAllEvents();
-            savings.forEach(save => {
-                const actIndex = activities.findIndex(a => a.id === save.activityId);
-                const act = actIndex >= 0 ? activities[actIndex] : null;
-                
-                if(act) {
-                    const color = activityColors[actIndex % activityColors.length];
-                    calendar.addEvent({
-                        title: `+${save.amount.toLocaleString()} ฿`,
-                        start: save.dateStr,
-                        backgroundColor: color,
-                        borderColor: color,
-                        extendedProps: { 
-                            slipUrl: save.slipUrl, 
-                            account: act.account, 
-                            actName: act.name,
-                            amount: save.amount.toLocaleString()
-                        }
-                    });
-                }
+            window.allUsersSavings.forEach(save => {
+                calendar.addEvent({
+                    title: `[${save.userName}] +${save.amount.toLocaleString()}`,
+                    start: save.dateStr,
+                    backgroundColor: save.color,
+                    borderColor: save.color,
+                    extendedProps: { 
+                        slipUrl: save.slipUrl, 
+                        account: save.account, 
+                        actName: save.actName,
+                        amount: save.amount,
+                        userName: save.userName,
+                        dateStr: save.dateStr,
+                        displayDate: save.displayDate
+                    }
+                });
             });
         }
 
         // Summary
         window.populateProfileSelect = async () => {
             const sel = document.getElementById('profileSelect');
-            sel.innerHTML = '<option value="me">-- โหลดข้อมูลของฉัน --</option>';
+            const myName = window.currentUser.displayName || window.currentUser.email || 'ฉัน';
+            sel.innerHTML = `<option value="me">👤 ${myName} (ตัวฉัน)</option>`;
             try {
                 const snap = await getDocs(collection(db, "users"));
                 snap.forEach(doc => {
                     if(doc.id !== window.currentUser.uid) {
                         const displayName = doc.data().displayName || doc.data().email || 'สมาชิกไม่มีชื่อ';
-                        sel.innerHTML += `<option value="${doc.id}">${displayName}</option>`;
+                        sel.innerHTML += `<option value="${doc.id}">👤 ${displayName}</option>`;
                     }
                 });
             } catch (e) { console.warn("ไม่สามารถโหลดรายชื่อได้", e); }
